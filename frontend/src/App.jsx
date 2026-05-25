@@ -23,8 +23,8 @@ export default function App() {
     try {
       const recordsRes = await axios.get(`${API_BASE}/records/`);
       const batchesRes = await axios.get(`${API_BASE}/batches/`);
-      setRecords(recordsRes.data);
-      setBatches(batchesRes.data);
+      setRecords(Array.isArray(recordsRes.data) ? recordsRes.data : []);
+      setBatches(Array.isArray(batchesRes.data) ? batchesRes.data : []);
     } catch (err) {
       console.error("Data synchronization error:", err);
     } finally {
@@ -35,16 +35,26 @@ export default function App() {
   const handleFileUpload = async (e, type) => {
     const file = e.target.files[0];
     if (!file) return;
+    
     const formData = new FormData();
     formData.append('file', file);
     
     setLoading(true);
     try {
-      const url = type === 'SAP' ? `${API_BASE}/records/ingest-sap/` : `${API_BASE}/records/ingest-utility/`;
-      await axios.post(url, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      fetchDashboardData();
+      const url = type === 'SAP' 
+        ? `${API_BASE}/records/ingest-sap/` 
+        : `${API_BASE}/records/ingest-utility/`;
+        
+      await axios.post(url, formData, { 
+        headers: { 'Content-Type': 'multipart/form-data' } 
+      });
+      
+      // Clear file inputs so the same file can be uploaded sequentially if needed
+      e.target.value = null;
+      await fetchDashboardData();
     } catch (err) {
-      alert("Ingestion pipeline failure. Check format structure.");
+      console.error("Ingestion error traceback:", err.response?.data || err.message);
+      alert(err.response?.data?.error || "Ingestion pipeline failure. Check format structure.");
     } finally {
       setLoading(false);
     }
@@ -54,8 +64,9 @@ export default function App() {
     setLoading(true);
     try {
       await axios.post(`${API_BASE}/records/sync-concur/`);
-      fetchDashboardData();
+      await fetchDashboardData();
     } catch (err) {
+      console.error("Concur sync traceback:", err.response?.data || err.message);
       alert("API wire sync timeout.");
     } finally {
       setLoading(false);
@@ -65,16 +76,24 @@ export default function App() {
   const executeStateTransition = async (id, targetStatus) => {
     try {
       const payload = { status: targetStatus };
-      if (targetStatus === 'APPROVED' && overrideCarbon) {
-        payload.co2e_kg = parseFloat(overrideCarbon);
-        payload.reason = correctionReason || "Manual adjustment before locking";
+      if (targetStatus === 'APPROVED') {
+        if (overrideCarbon !== '') {
+          payload.co2e_kg = parseFloat(overrideCarbon);
+        }
+        payload.reason = correctionReason || "Analyst baseline adjustment execution";
+      } else if (targetStatus === 'SUSPICIOUS') {
+        payload.reason = correctionReason || "Flagged for manual review normalization";
       }
-      await axios.post(`${API_BASE}/records/${id}/update-status/`, payload);
-      setSelectedRecord(null);
+      
+      const res = await axios.post(`${API_BASE}/records/${id}/update-status/`, payload);
+      
+      // Update selected record view synchronously with database response state
+      setSelectedRecord(res.data);
       setOverrideCarbon('');
       setCorrectionReason('');
-      fetchDashboardData();
+      await fetchDashboardData();
     } catch (err) {
+      console.error("Transition error:", err.response?.data || err.message);
       alert(err.response?.data?.error || "State transition denied.");
     }
   };
@@ -82,7 +101,7 @@ export default function App() {
   const filteredRecords = records.filter(rec => activeTab === 'ALL' || rec.status === activeTab);
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto' }}>
+    <div style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* Header Block */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
         <div>
@@ -97,24 +116,24 @@ export default function App() {
       {/* Ingestion Pipeline Grid Controls */}
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '32px' }}>
         <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>1. SAP Gateway (Scope 1/3)</h3>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: '#f1f5f9', border: '2px dashed #cbd5e1', borderRadius: '6px', cursor: 'pointer', justifyContent: 'center' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#334155' }}>1. SAP Gateway (Scope 1/3)</h3>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: '#f1f5f9', border: '2px dashed #cbd5e1', borderRadius: '6px', cursor: 'pointer', justifyContent: 'center', fontWeight: '500', color: '#475569' }}>
             <Upload size={18} /> Ingest SAP CSV Dump
             <input type="file" accept=".csv" onChange={(e) => handleFileUpload(e, 'SAP')} style={{ display: 'none' }} />
           </label>
         </div>
 
         <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>2. Utility Intake (Scope 2)</h3>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: '#f1f5f9', border: '2px dashed #cbd5e1', borderRadius: '6px', cursor: 'pointer', justifyContent: 'center' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#334155' }}>2. Utility Intake (Scope 2)</h3>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: '#f1f5f9', border: '2px dashed #cbd5e1', borderRadius: '6px', cursor: 'pointer', justifyContent: 'center', fontWeight: '500', color: '#475569' }}>
             <Upload size={18} /> Load Portal Export
             <input type="file" accept=".csv" onChange={(e) => handleFileUpload(e, 'UTILITY')} style={{ display: 'none' }} />
           </label>
         </div>
 
         <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>3. Concur API Wire (Scope 3)</h3>
-          <button onClick={triggerConcurSync} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', justifyContent: 'center', fontWeight: '500' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#334155' }}>3. Concur API Wire (Scope 3)</h3>
+          <button onClick={triggerConcurSync} disabled={loading} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', justifyContent: 'center', fontWeight: '500', opacity: loading ? 0.7 : 1 }}>
             Sync Concur Endpoints
           </button>
         </div>
@@ -123,10 +142,10 @@ export default function App() {
       {/* Primary Dashboard Workspace Layout */}
       <main style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {/* Main Records Ledger Panel */}
-        <div style={{ flex: 1, background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '20px' }}>
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
+        <div style={{ flex: 1, background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '20px', minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', overflowX: 'auto' }}>
             {['ALL', 'PENDING', 'SUSPICIOUS', 'APPROVED'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} style={{ padding: '8px 16px', background: activeTab === tab ? '#e2e8f0' : 'none', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '600', color: activeTab === tab ? '#0f172a' : '#64748b' }}>
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{ padding: '8px 16px', background: activeTab === tab ? '#e2e8f0' : 'none', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '600', color: activeTab === tab ? '#0f172a' : '#64748b', whiteSpace: 'nowrap' }}>
                 {tab} ({tab === 'ALL' ? records.length : records.filter(r => r.status === tab).length})
               </button>
             ))}
@@ -146,26 +165,32 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords.map(rec => (
-                  <tr key={rec.id} style={{ borderBottom: '1px solid #f1f5f9', background: rec.status === 'SUSPICIOUS' ? '#fffbeb' : 'inherit', fontSize: '14px' }}>
-                    <td style={{ padding: '12px', fontWeight: '500' }}>{rec.batch_detail?.source_type}</td>
-                    <td style={{ padding: '12px' }}><span style={{ padding: '2px 8px', borderRadius: '12px', background: '#f1f5f9', fontSize: '12px', fontWeight: '700' }}>S{rec.scope}</span></td>
-                    <td style={{ padding: '12px', color: '#334155' }}>{rec.category}</td>
-                    <td style={{ padding: '12px' }}>{rec.original_value} <span style={{ fontSize: '12px', color: '#64748b' }}>{rec.original_unit}</span></td>
-                    <td style={{ padding: '12px', fontWeight: '600' }}>{rec.co2e_kg ? `${rec.co2e_kg} kg` : 'Unassigned'}</td>
-                    <td style={{ padding: '12px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: rec.status === 'APPROVED' ? '#16a34a' : rec.status === 'SUSPICIOUS' ? '#d97706' : '#2563eb' }}>
-                        {rec.status === 'APPROVED' ? <Lock size={12} /> : rec.status === 'SUSPICIOUS' ? <AlertTriangle size={12} /> : null}
-                        {rec.status}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <button onClick={() => { setSelectedRecord(rec); setOverrideCarbon(rec.co2e_kg || ''); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
-                        <Eye size={14} /> Inspect
-                      </button>
-                    </td>
+                {filteredRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No data matching operational scope bounds.</td>
                   </tr>
-                ))}
+                ) : (
+                  filteredRecords.map(rec => (
+                    <tr key={rec.id} style={{ borderBottom: '1px solid #f1f5f9', background: rec.status === 'SUSPICIOUS' ? '#fffbeb' : 'inherit', fontSize: '14px' }}>
+                      <td style={{ padding: '12px', fontWeight: '500', color: '#0f172a' }}>{rec.batch_detail?.source_type || 'SYSTEM'}</td>
+                      <td style={{ padding: '12px' }}><span style={{ padding: '2px 8px', borderRadius: '12px', background: '#f1f5f9', fontSize: '12px', fontWeight: '700', color: '#334155' }}>Scope {rec.scope}</span></td>
+                      <td style={{ padding: '12px', color: '#334155' }}>{rec.category}</td>
+                      <td style={{ padding: '12px', color: '#0f172a' }}>{rec.original_value} <span style={{ fontSize: '12px', color: '#64748b' }}>{rec.original_unit}</span></td>
+                      <td style={{ padding: '12px', fontWeight: '600', color: '#0f172a' }}>{rec.co2e_kg ? `${rec.co2e_kg} kg` : '0.00 kg'}</td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: rec.status === 'APPROVED' ? '#16a34a' : rec.status === 'SUSPICIOUS' ? '#d97706' : '#2563eb' }}>
+                          {rec.status === 'APPROVED' ? <Lock size={12} /> : rec.status === 'SUSPICIOUS' ? <AlertTriangle size={12} /> : null}
+                          {rec.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px' }}>
+                        <button onClick={() => { setSelectedRecord(rec); setOverrideCarbon(rec.co2e_kg || ''); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', color: '#334155' }}>
+                          <Eye size={14} /> Inspect
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -173,28 +198,28 @@ export default function App() {
 
         {/* Side Audit Drawer Panel */}
         {selectedRecord && (
-          <aside style={{ width: '450px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px', position: 'sticky', top: '24px' }}>
+          <aside style={{ width: '450px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px', position: 'sticky', top: '24px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', margin: 0 }}>Inspection Engine</h2>
-              <button onClick={() => setSelectedRecord(null)} style={{ border: 'none', background: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
+              <h2 style={{ fontSize: '18px', margin: 0, fontWeight: '700', color: '#1e293b' }}>Inspection Engine</h2>
+              <button onClick={() => setSelectedRecord(null)} style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0 4px' }}>&times;</button>
             </div>
 
             {/* Suspicious Anomalies Banner */}
-            {selectedRecord.validation_flags.length > 0 && (
+            {selectedRecord.validation_flags && selectedRecord.validation_flags.length > 0 && (
               <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', padding: '12px', borderRadius: '6px', marginBottom: '20px', color: '#b45309', fontSize: '13px' }}>
                 <div style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}><ShieldAlert size={16}/> Pipeline Anomalies Identified:</div>
                 <ul style={{ margin: 0, paddingLeft: '20px' }}>
-                  {selectedRecord.validation_flags.map((flag, k) => <li key={k}><code>{flag}</code></li>)}
+                  {selectedRecord.validation_flags.map((flag, k) => <li key={k} style={{ marginTop: '2px' }}><code>{flag}</code></li>)}
                 </ul>
               </div>
             )}
 
             {/* Micro Metadata Metrics Readout */}
-            <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '6px', marginBottom: '20px', fontSize: '13px' }}>
-              <div style={{ marginBottom: '6px' }}><strong>System Tracker ID:</strong> <span style={{ fontFamily: 'monospace' }}>{selectedRecord.id}</span></div>
+            <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '6px', marginBottom: '20px', fontSize: '13px', color: '#334155' }}>
+              <div style={{ marginBottom: '6px' }}><strong>System Tracker ID:</strong> <span style={{ fontFamily: 'monospace', color: '#0f172a' }}>{selectedRecord.id}</span></div>
               <div style={{ marginBottom: '6px' }}><strong>Batch Line Context:</strong> Row index position #{selectedRecord.source_row_index}</div>
-              <div><strong>Lineage Payload Blueprint:</strong></div>
-              <pre style={{ margin: '8px 0 0 0', background: '#0f172a', color: '#38bdf8', padding: '12px', borderRadius: '4px', overflowX: 'auto', fontSize: '11px' }}>
+              <div style={{ marginBottom: '4px' }}><strong>Lineage Payload Blueprint:</strong></div>
+              <pre style={{ margin: '8px 0 0 0', background: '#0f172a', color: '#38bdf8', padding: '12px', borderRadius: '4px', overflowX: 'auto', fontSize: '11px', fontFamily: 'monospace' }}>
                 {JSON.stringify(selectedRecord.raw_data_payload, null, 2)}
               </pre>
             </div>
@@ -202,14 +227,14 @@ export default function App() {
             {/* Modification and Sign-off Actions Block */}
             {!selectedRecord.is_locked ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <label style={{ fontSize: '13px', fontWeight: '600' }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
                   Override Calculated Impact Value (CO₂e kg):
-                  <input type="number" value={overrideCarbon} onChange={(e) => setOverrideCarbon(e.target.value)} style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
+                  <input type="number" value={overrideCarbon} onChange={(e) => setOverrideCarbon(e.target.value)} style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', boxSizing: 'border-box' }} />
                 </label>
                 
-                <label style={{ fontSize: '13px', fontWeight: '600' }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
                   Audit Correction Justification:
-                  <textarea value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} placeholder="Provide compliance context rationale..." style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', minHeight: '60px' }} />
+                  <textarea value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} placeholder="Provide compliance context rationale..." style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', minHeight: '60px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
                 </label>
 
                 <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
@@ -217,7 +242,7 @@ export default function App() {
                     <CheckCircle size={16} /> Approve & Lock row
                   </button>
                   {selectedRecord.status !== 'SUSPICIOUS' && (
-                    <button onClick={() => executeStateTransition(selectedRecord.id, 'SUSPICIOUS')} style={{ padding: '12px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>
+                    <button onClick={() => executeStateTransition(selectedRecord.id, 'SUSPICIOUS')} style={{ padding: '12px 16px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>
                       Flag
                     </button>
                   )}
@@ -226,19 +251,19 @@ export default function App() {
             ) : (
               <div style={{ textAlign: 'center', padding: '16px', border: '2px solid #16a34a', background: '#f0fdf4', color: '#16a34a', borderRadius: '6px', fontWeight: '600' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '4px' }}><Lock size={18} /> Row Vault Locked for Audits</div>
-                <div style={{ fontSize: '12px', color: '#15803d' }}>This data transaction line item has been verified and signed off.</div>
+                <div style={{ fontSize: '12px', color: '#15803d', fontWeight: '500' }}>This data transaction line item has been verified and signed off.</div>
               </div>
             )}
 
             {/* Historical Footprints Log Trail */}
-            {selectedRecord.audit_trail?.length > 0 && (
+            {selectedRecord.audit_trail && selectedRecord.audit_trail.length > 0 && (
               <div style={{ marginTop: '24px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-                <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Immutable Verification Trail</h4>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#1e293b', fontWeight: '600' }}>Immutable Verification Trail</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto' }}>
                   {selectedRecord.audit_trail.map((log) => (
-                    <div key={log.id} style={{ fontSize: '12px', background: '#f8fafc', padding: '8px', borderLeft: '3px solid #64748b' }}>
-                      <div style={{ color: '#64748b' }}><strong>{log.changed_field}</strong> updated from <code>{log.old_value || 'None'}</code> &rarr; <code>{log.new_value}</code></div>
-                      <div style={{ fontStyle: 'italic', color: '#475569', marginTop: '2px' }}>"{log.reason}"</div>
+                    <div key={log.id} style={{ fontSize: '12px', background: '#f8fafc', padding: '8px', borderLeft: '3px solid #64748b', borderRadius: '0 4px 4px 0' }}>
+                      <div style={{ color: '#475569' }}><strong>{log.changed_field}</strong> updated from <code style={{ background: '#e2e8f0', padding: '1px 4px', borderRadius: '2px' }}>{log.old_value || 'None'}</code> &rarr; <code style={{ background: '#e2e8f0', padding: '1px 4px', borderRadius: '2px' }}>{log.new_value}</code></div>
+                      <div style={{ fontStyle: 'italic', color: '#64748b', marginTop: '4px' }}>"{log.reason}"</div>
                     </div>
                   ))}
                 </div>
