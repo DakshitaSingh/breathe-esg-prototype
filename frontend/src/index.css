@@ -1,0 +1,11 @@
+/* frontend/src/index.css */
+@import "normalize.css" url("https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css");
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+* { box-sizing: border-box; }
