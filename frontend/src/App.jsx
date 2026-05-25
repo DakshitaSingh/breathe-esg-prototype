@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Upload, AlertTriangle, CheckCircle, Lock, RefreshCw, Eye, ShieldAlert } from 'lucide-react';
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+const API_BASE = 'https://breathe-esg-prototype-ejuk.onrender.com/api';
 
 export default function App() {
   const [records, setRecords] = useState([]);
