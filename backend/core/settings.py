@@ -59,7 +59,11 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://breathe-esg-prototype-kohl.vercel.app",  # Add your exact Vercel link here
 ]
+
+# Alternatively, for an interview assignment prototype, you can allow all origins to be completely bulletproof:
+CORS_ALLOW_ALL_ORIGINS = True
 
 # Ensure decimal values don't turn into strings in JSON responses
 REST_FRAMEWORK = {
