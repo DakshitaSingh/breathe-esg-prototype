@@ -61,7 +61,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "https://breathe-esg-prototype-kohl.vercel.app",  # Add your exact Vercel link here
 ]
-
+# Open backend/core/settings.py and update this line:
+ALLOWED_HOSTS = ['*']
 # Alternatively, for an interview assignment prototype, you can allow all origins to be completely bulletproof:
 CORS_ALLOW_ALL_ORIGINS = True
 
